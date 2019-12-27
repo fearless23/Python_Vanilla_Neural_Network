@@ -4,11 +4,13 @@ import matplotlib.pyplot as plt
 
 class NeuralNetwork:
 
-    def __init__(self, inputs, outputs, hidden_layers, learning_rate=0.3):
+    def __init__(self, inputs, outputs, hidden_layers,
+                 learning_rate, activation="sigmoid"):
         self.inputs = inputs
         self.outputs = outputs
         self.learning_rate = learning_rate
         self.hidden_layers = hidden_layers
+        self.activation = activation
         self.__basic()
 
     def __basic(self):
@@ -29,11 +31,17 @@ class NeuralNetwork:
             self.weights.append(np.random.uniform(size=layer_size))
             self.biases.append(np.random.uniform(size=(1, self.layers[i])))
 
-    def __sigmoid(self, m):
-        return 1 / (1 + np.exp(-m))
+    def __actFn(self, m):
+        if self.activation == "reLu":
+            return np.maximum(0, m)
+        else:
+            return 1 / (1 + np.exp(-m))
 
-    def __sigmoid_der(self, m):
-        return m * (1 - m)
+    def __actFn_der(self, m):
+        if self.activation == "reLu":
+            return np.greater(m, 0).astype(int)
+        else:
+            return m * (1 - m)
 
     def __singlePass(self):
         # Stored weighted inputs, activated and deltas
@@ -44,7 +52,7 @@ class NeuralNetwork:
         # Move Forward
         for i in range(1, len(self.layers)):
             zi = (np.dot(a[i-1], self.weights[i-1])) + self.biases[i-1]
-            ai = self.__sigmoid(zi)
+            ai = self.__actFn(zi)
             z.append(zi)
             a.append(ai)
 
@@ -53,7 +61,7 @@ class NeuralNetwork:
 
         # Back Propagation
         for j in range(1, len(self.layers)):
-            fdashz = self.__sigmoid_der(z[-j])
+            fdashz = self.__actFn_der(z[-j])
             d = e * fdashz
             if j != 1:
                 tw = np.transpose(self.weights[1-j])
@@ -95,14 +103,14 @@ class NeuralNetwork:
         plt.figure(figsize=(15, 5))
         plt.plot(self.epoch_list, self.error_history)
         plt.xlabel('Epoch')
-        plt.ylabel('Error')
+        plt.ylabel('Avg. Error for Epoch')
         plt.show()
 
     def test(self, testInput, tesOutput):
         a = [testInput]
         for i in range(1, len(self.layers)):
             zi = np.dot(a[i-1], self.weights[i-1])
-            ai = self.__sigmoid(zi)
+            ai = self.__actFn(zi)
             a.append(ai)
 
         e = a[-1] - tesOutput
