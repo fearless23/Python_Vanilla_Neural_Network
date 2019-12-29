@@ -12,107 +12,125 @@ class NeuralNetwork:
         self.hidden_layers = hidden_layers
         self.activation = activation
         self.__basic()
+        self._initWeightsAndBiases()
 
     def __basic(self):
         # Calc some cool things
-        totalRecords, xCols = np.shape(self.inputs)
-        _, yCols = np.shape(self.outputs)
-        self.totalRecords = totalRecords
-        self.xCols = xCols
-        self.yCols = yCols
-        self.layers = [xCols]+self.hidden_layers+[yCols]
-        self.error_history = []
-        self.epoch_list = []
+        self.totalRecords, self.xCols = np.shape(self.inputs)
+        _, self.yCols = np.shape(self.outputs)
+        self.layers = [self.xCols] + self.hidden_layers + [self.yCols]
+
+    def _initWeightsAndBiases(self):
         self.weights = []
         self.biases = []
-
         for i in range(1, len(self.layers)):
             layer_size = (self.layers[i-1], self.layers[i])
             self.weights.append(np.random.uniform(size=layer_size))
             self.biases.append(np.random.uniform(size=(1, self.layers[i])))
 
-    def __actFn(self, m):
+    def __actFn(self, x):
+        mat = x
         if self.activation == "reLu":
-            return np.maximum(0, m)
+            return np.maximum(0, mat)
         else:
-            return 1 / (1 + np.exp(-m))
+            return 1.0 / (1 + np.exp(-1*mat))
 
-    def __actFn_der(self, m):
+    def __actFn_der(self, x):
+        mat = x
+        print(f"MAT: {mat}")
         if self.activation == "reLu":
-            return np.greater(m, 0).astype(int)
+            # return np.greater(mat, 0).astype(int)
+            # return (mat > 0) * 1
+            return np.where(mat <= 0, 0, 1)
         else:
-            return m * (1 - m)
+            return mat * (1 - mat)
 
-    def __singlePass(self):
-        # Stored weighted inputs, activated and deltas
-        z = []
-        a = [self.x]
-        ds = []
+    def __forwardPass(self, x):
+        w, b = self.weights, self.biases
+        a, z = [x], []
 
-        # Move Forward
+        # Forward Pass
         for i in range(1, len(self.layers)):
-            zi = (np.dot(a[i-1], self.weights[i-1])) + self.biases[i-1]
-            ai = self.__actFn(zi)
+            zi = (np.dot(a[i-1], w[i-1])) + b[i-1]
             z.append(zi)
+            ai = self.__actFn(zi)
             a.append(ai)
 
-        # Calc error Vector
-        e = a[-1] - self.y
+        return a, z
 
+    def __backwardPass(self, a, z, e, batch_size):
+        d = []
+        mul = self.learning_rate / batch_size
+        w, b = self.weights, self.biases
         # Back Propagation
-        for j in range(1, len(self.layers)):
-            fdashz = self.__actFn_der(z[-j])
-            d = e * fdashz
-            if j != 1:
-                tw = np.transpose(self.weights[1-j])
-                d = np.dot(ds[-1], tw) * fdashz
+        for k in range(1, len(self.layers)):
+            di = None
+            fdashz = self.__actFn_der(z[-k])
+            if k == 1:
+                di = e * fdashz
+            else:
+                di = (np.dot(d[-1], w[1-k].T)) * fdashz
 
-            ds.append(d)
-            delta_w = np.dot(np.transpose(a[-j-1]), d)
-            self.weights[-j] = self.weights[-j] + self.learning_rate * delta_w
+            d.append(di)
+            w[-k] += mul * np.dot(a[-k-1].T, di)
+            b[-k] += mul * np.sum(di, axis=0)
 
-            delta_b = np.sum(delta_w, axis=0)
-            self.biases[-j] = self.biases[-j] + self.learning_rate * delta_b
+        # Weights and biases are changed globally at Class
+        self.weights = w
+        self.biases = b
+        return
 
-        # All Weights and biases are changed globally...
-        # Return Error in this pass
-        return np.sum(e**2)
+    def __singlePass(self, x, y, batch_size):
+        a, z = self.__forwardPass(x)
+        e = a[-1] - y
+        self.__backwardPass(a, z, e, batch_size)
+        # Error = Mean Squared Error for this pass
+        return 0.5 * np.sum(e**2)
 
-    def train(self, epochs=1000, batch_size=50):
-        for i in range(0, epochs):
-            avgError = self.__trainInBatches(batch_size=batch_size)
-            self.error_history.append(avgError)
-            self.epoch_list.append(i+1)
-        self.__showPlot()
-
-    def __trainInBatches(self, batch_size=50):
-        no_of_batches = int(self.totalRecords / batch_size)
+    def __singleEpoch(self, batch_size, total_batches):
         start = 0
-        error = 0
-        for i in range(no_of_batches):
-            end = start + batch_size
-            self.x = self.inputs[start:end, 0:self.xCols]
-            self.y = self.outputs[start:end, 0:self.yCols]
-            error += self.__singlePass()
-            start = start + batch_size
+        epoch_error = 0.0
+        for i in range(total_batches):
+            end = int(start + batch_size)
+            batchX = self.inputs[start:end, 0:self.xCols]
+            batchY = self.outputs[start:end, 0:self.yCols]
+            epoch_error += self.__singlePass(batchX, batchY, batch_size)
+            start = int(start + batch_size)
 
-        return error/no_of_batches
+        return epoch_error/total_batches
 
-    def __showPlot(self):
-        print(f"Final Error: {self.error_history[-1]}")
+    def __showPlot(self, xAxisData, yAxisData):
+        print(f"Final Error: {yAxisData[-1]}")
         plt.figure(figsize=(15, 5))
-        plt.plot(self.epoch_list, self.error_history)
+        plt.plot(xAxisData, yAxisData)
         plt.xlabel('Epoch')
         plt.ylabel('Avg. Error for Epoch')
         plt.show()
 
-    def test(self, testInput, tesOutput):
-        a = [testInput]
-        for i in range(1, len(self.layers)):
-            zi = np.dot(a[i-1], self.weights[i-1])
-            ai = self.__actFn(zi)
-            a.append(ai)
+    def train(self, epochs=1000, batch_size=50, show_Plot=True):
+        total_batches = int(self.totalRecords / batch_size)
+        if total_batches < 1:
+            print("Batch_Size is not multiple of total Records.")
+            return
 
-        e = a[-1] - tesOutput
+        epoch_idx_list = []
+        epoch_avg_error_list = []
+        for i in range(0, epochs):
+            epochAvgError = self.__singleEpoch(batch_size, total_batches)
+            epoch_idx_list.append(i+1)
+            epoch_avg_error_list.append(epochAvgError)
+            if ((i+1) % 50) == 1:
+                print(f"Epoch: {i+1} Error: {epochAvgError}")
+        if show_Plot:
+            self.__showPlot(epoch_idx_list, epoch_avg_error_list)
+
+    def test(self, testInput, tesOutput):
+        act = testInput
+        for i in range(1, len(self.layers)):
+            zi = (np.dot(act, self.weights[i-1])) + self.biases[i-1]
+            act = self.__actFn(zi)
+
+        e = act - tesOutput
         ssq = np.sum(e**2)
-        print(f"Test Case Error: {ssq}")
+        print(f"Predicted Value: {act}")
+        print(f"Prediction Error: {ssq}")
