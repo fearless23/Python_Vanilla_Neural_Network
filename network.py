@@ -4,13 +4,11 @@ import matplotlib.pyplot as plt
 
 class NeuralNetwork:
 
-    def __init__(self, inputs, outputs, hidden_layers,
-                 layers_afn, learning_rate, loss_fn):
+    def __init__(self, inputs, outputs, layers,
+                 learning_rate, loss_fn):
         self.inputs = inputs
         self.outputs = outputs
-        self.hidden_layers = hidden_layers
-        # len hiddenlayers+1 = len of layers_afn
-        self.layers_afn = layers_afn
+        self.layers = layers
         self.learning_rate = learning_rate
         self.loss_fn = loss_fn
         self.__basic()
@@ -19,15 +17,20 @@ class NeuralNetwork:
     def __basic(self):
         # Calc some cool things
         self.totalRecords, self.xCols = np.shape(self.inputs)
-        _, self.yCols = np.shape(self.outputs)
-        self.layers = [self.xCols] + self.hidden_layers + [self.yCols]
+        m, self.yCols = np.shape(self.outputs)
+        if self.layers[0]["dim"] != self.xCols:
+            raise Exception('Input Layer dim not match with input data')
+        if self.layers[-1]["dim"] != self.yCols:
+            raise Exception('Output Layer dim not match with output data')
+        if m != self.totalRecords:
+            raise Exception('Total Records in input and output are not same')
 
     def _initWeightsAndBiases(self):
         self.weights = []
         self.biases = []
 
         for i in range(1, len(self.layers)):
-            i_dim, o_dim = self.layers[i-1], self.layers[i]
+            i_dim, o_dim = self.layers[i-1]["dim"], self.layers[i]["dim"]
             p = np.sqrt(1/(i_dim+o_dim))
             self.weights.append(np.random.randn(i_dim, o_dim)*p)
             self.biases.append(np.zeros(shape=(1, o_dim), dtype="float"))
@@ -63,8 +66,11 @@ class NeuralNetwork:
             loss = 0.5 * (e**2)
             dl_dyp = e
 
-        error = np.sum(loss)/batch_size
-        return dl_dyp, error
+        # Total cost of batch
+        j = np.sum(loss) / batch_size
+        dl_dyp = dl_dyp / batch_size
+        assert(isinstance(j, float))
+        return dl_dyp, j
 
     def __forwardPass(self, x):
         w, b = self.weights, self.biases
@@ -72,26 +78,26 @@ class NeuralNetwork:
 
         for i in range(1, len(self.layers)):
             zi = a[i-1]@w[i-1] + b[i-1]
-            ai = self.__actFn(zi, self.layers_afn[i-1])
+            ai = self.__actFn(zi, self.layers[i-1]["act"])
             z.append(zi)
             a.append(ai)
 
         return a, z
 
-    def __backwardPass(self, a, z, dl_dyp, batch_size):
-        mul = self.learning_rate / batch_size
+    def __backwardPass(self, a, z, dl_dyp):
+        r = self.learning_rate
         w, b = self.weights, self.biases
 
         d = dl_dyp
         for k in range(1, len(self.layers)):
-            fdashz = self.__actFn_der(z[-k], self.layers_afn[-k])
+            fdashz = self.__actFn_der(z[-k], self.layers[-k]["act"])
             if k == 1:
                 d = d * fdashz
             else:
                 d = (d@w[1-k].T) * fdashz
 
-            w[-k] += mul * a[-k-1].T@d
-            b[-k] += mul * np.sum(d, axis=0)
+            w[-k] -= r * a[-k-1].T@d
+            b[-k] -= r * np.sum(d, axis=0)
 
         # Weights and biases are changed globally at Class
         self.weights = w
@@ -101,7 +107,7 @@ class NeuralNetwork:
     def __singleBatchPass(self, x, y, batch_size):
         a, z = self.__forwardPass(x)
         dl_dyp, error = self.__lossCalc(a[-1], y, batch_size)
-        self.__backwardPass(a, z, dl_dyp, batch_size)
+        self.__backwardPass(a, z, dl_dyp)
         return error
 
     def __singleEpoch(self, batch_size, total_batches):
@@ -146,7 +152,7 @@ class NeuralNetwork:
         act = testInput
         for i in range(1, len(self.layers)):
             zi = (act@self.weights[i-1]) + self.biases[i-1]
-            act = self.__actFn(zi, self.layers_afn[i-1])
+            act = self.__actFn(zi, self.layers[i-1]["act"])
 
         batch_size, _ = testInput.shape
         _, error = self.__lossCalc(act, tesOutput, batch_size)
