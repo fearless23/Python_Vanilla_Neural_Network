@@ -16,13 +16,13 @@ class NeuralNetwork:
 
     def __basic(self):
         # Calc some cool things
-        self.totalRecords, self.xCols = np.shape(self.inputs)
-        m, self.yCols = np.shape(self.outputs)
+        self.totalRecords, self.xCols = self.inputs.shape
+        N, self.yCols = self.outputs.shape
         if self.layers[0]["dim"] != self.xCols:
-            raise Exception('Input Layer dim not match with input data')
+            raise Exception('Input dim not equal to input columns.')
         if self.layers[-1]["dim"] != self.yCols:
-            raise Exception('Output Layer dim not match with output data')
-        if m != self.totalRecords:
+            raise Exception('Output dim not equal to output columns.')
+        if N != self.totalRecords:
             raise Exception('Total Records in input and output are not same')
 
     def _initWeightsAndBiases(self):
@@ -78,7 +78,7 @@ class NeuralNetwork:
 
         for i in range(1, len(self.layers)):
             zi = a[i-1]@w[i-1] + b[i-1]
-            ai = self.__actFn(zi, self.layers[i-1]["act"])
+            ai = self.__actFn(zi, self.layers[i]["act"])
             z.append(zi)
             a.append(ai)
 
@@ -87,7 +87,7 @@ class NeuralNetwork:
     def __backwardPass(self, a, z, dl_dyp):
         r = self.learning_rate
         w, b = self.weights, self.biases
-
+        dw, db = [], []
         d = dl_dyp
         for k in range(1, len(self.layers)):
             fdashz = self.__actFn_der(z[-k], self.layers[-k]["act"])
@@ -96,9 +96,17 @@ class NeuralNetwork:
             else:
                 d = (d@w[1-k].T) * fdashz
 
-            w[-k] -= r * a[-k-1].T@d
-            b[-k] -= r * np.sum(d, axis=0)
+            # w[-k] -= r * a[-k-1].T@d
+            # b[-k] -= r * np.sum(d, axis=0)
 
+            dwi = -r * a[-k-1].T@d
+            dbi = -r * np.sum(d, axis=0)
+            dw.insert(0, dwi)
+            db.insert(0, dbi)
+
+        # Update Weights
+        for i in range(1, len(self.layers)):
+            w[-i] = w[-i] + dw[-i]
         # Weights and biases are changed globally at Class
         self.weights = w
         self.biases = b
@@ -115,47 +123,61 @@ class NeuralNetwork:
         epoch_error = 0.0
         for i in range(total_batches):
             end = int(start + batch_size)
-            batchX = self.inputs[start:end, 0:self.xCols]
-            batchY = self.outputs[start:end, 0:self.yCols]
+            batchX = self.inputs[start:end, :]
+            batchY = self.outputs[start:end, :]
             epoch_error += self.__singleBatchPass(batchX, batchY, batch_size)
             start = int(start + batch_size)
 
         return epoch_error/total_batches
 
     def __showPlot(self, xAxisData, yAxisData):
-        print(f"Final Error: {yAxisData[-1]}")
         plt.figure(figsize=(15, 5))
         plt.plot(xAxisData, yAxisData)
         plt.xlabel('Epoch')
         plt.ylabel('Avg. Error for Epoch')
         plt.show()
 
-    def train(self, epochs=1000, batch_size=50, showErrors=False,
-              show_Plot=True):
-        total_batches = int(self.totalRecords / batch_size)
-        if total_batches < 1:
-            print("Batch_Size is not multiple of total Records.")
-            return
+    def train(self, epochs=1000, batch_size=50,
+              show_errors=False, show_plot=True):
+        """Train Data over 'n' epochs & 'm' batch_size"""
+        N, m = self.totalRecords, batch_size
+        if N % m != 0:
+            msg = f"Batch Size {m} is not multiple of Total Records({N})."
+            raise Exception(msg)
+        total_batches = int(N / m)
 
-        epoch_idx_list = []
-        epoch_avg_error_list = []
-        for i in range(0, epochs):
-            epochAvgError = self.__singleEpoch(batch_size, total_batches)
-            epoch_idx_list.append(i+1)
-            epoch_avg_error_list.append(epochAvgError)
-            if showErrors and ((i+1) % 50) == 1:
-                print(f"Epoch: {i+1} Error: {epochAvgError}")
-        if show_Plot:
-            self.__showPlot(epoch_idx_list, epoch_avg_error_list)
+        epoch_list = []
+        error_list = []
+        for i in range(1, epochs+1):
+            epochAvgError = self.__singleEpoch(m, total_batches)
+            epoch_list.append(i)
+            error_list.append(epochAvgError)
+            if show_errors and (i % 10) == 1:
+                print(f"Epoch: {i} Error: {epochAvgError}")
 
-    def test(self, testInput, tesOutput, showPredicted=False):
-        act = testInput
+        print(f"Final Error: {error_list[-1]}")
+        if show_plot:
+            self.__showPlot(epoch_list, error_list)
+
+    def test(self, tx, ty, showPredicted=True,
+             metrics=[]):
+        test_size, _ = tx.shape
+        act = tx
         for i in range(1, len(self.layers)):
             zi = (act@self.weights[i-1]) + self.biases[i-1]
             act = self.__actFn(zi, self.layers[i-1]["act"])
 
-        batch_size, _ = testInput.shape
-        _, error = self.__lossCalc(act, tesOutput, batch_size)
-        print(f"Test Error: {error}")
         if showPredicted:
-            print(f"Test Output: {act}")
+            for i in range(5):
+                txi = tx[i:i+1, :]
+                tyi = ty[i:i+1, :]
+                typi = act[i:i+1, :]
+                print(f"#{i+1}: {typi[0]} E:{tyi[0]}\n")
+
+        for metric in metrics:
+            if metric == "error":
+                # Calculate Accuracy
+                _, error = self.__lossCalc(act, ty, test_size)
+                print(f"Test Error: {error}")
+            if metric == "accuracy":
+                print(1)

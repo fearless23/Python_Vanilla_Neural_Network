@@ -1,18 +1,18 @@
 import numpy as np
-from data import x, y, test_x, test_y
+from data import x, y, tx, ty
 from network import NeuralNetwork
 
-rate = 0.1
+rate = 0.001
 layers = [
-    {"dim": 2, "act": None},
-    {"dim": 2, "act": "tanh"},
-    # {"dim": 4, "act": "relu"},
-    {"dim": 2, "act": "tanh"},
+    {"dim": 8, "act": None},
+    {"dim": 12, "act": "relu"},
+    {"dim": 8, "act": "relu"},
     {"dim": 1, "act": "sig"}
 ]
-epochs = 1200
-batch_size = 500
 loss_fn = "bce"
 nn = NeuralNetwork(x, y, layers, rate, loss_fn)
-nn.train(epochs, batch_size, show_Plot=True, showErrors=True)
-nn.test(test_x, test_y, True)
+
+epochs = 500
+batch_size = 20
+nn.train(epochs, batch_size, show_plot=True, show_errors=True)
+nn.test(tx, ty, True, ["accuracy"])
